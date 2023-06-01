@@ -1,6 +1,7 @@
-# Code repository for the manuscript 'Improving MR image quality with a multi-task, multi-domain CNN using convolutional losses.'
+# Code repository for the manuscript 'Improving MR image quality with a multi-task model, using convolutional losses.'
 
-Submitted to IEEE Transactions on Medical Imaging.
+Submitted to BMC Medical Imaging.
+
 The code uses the artefact augmentations from the repository: https://github.com/SimoneRuiter/artefacts
 
 ### Data generation
@@ -10,7 +11,7 @@ The fastMRI dataset is processed in 'data generation/fastMRI.py' while the in-ho
 
 ### Training code
 
-The script "training.py" uses a DataGenerator to load in the dataset created previously, build and compile the KIKI-Net architecture and train the model to correct the MRI artefacts.
+The script "training.py" uses a DataGenerator to load in the dataset created previously, build and compile the model, and trains it to correct the MRI artefacts.
 
 ### Evaluating code
 
