@@ -20,7 +20,7 @@ import tensorflow
 import numpy as np
 from six import with_metaclass
 
-import utils
+import artefactcorrection.utils
 
 try:
     from collections import Generator
