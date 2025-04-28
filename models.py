@@ -262,7 +262,7 @@ def InterNetLoss(inp, case):
     from tensorflow.keras.models import Model
     from tensorflow.keras import regularizers
     from tensorflow.keras.regularizers import l2
-    from tensorflow.keras.losses import mean_squared_error
+    from tensorflow.keras.losses import MeanSquaredError
     from tensorflow.keras.layers import Lambda, Input, MaxPooling2D, Conv2D, BatchNormalization, Dropout, UpSampling2D, Concatenate, SpatialDropout2D
 
     kernel_eye = tf.constant(np.expand_dims(np.expand_dims(np.array([[0, 0, 0], [0, 1, 0], [0, 0, 0]]), 2), 2), dtype=tf.float32)
