@@ -10,8 +10,8 @@ import tensorflow.keras.backend as K
 import tensorflow.keras as keras
 from tensorflow.keras import layers
 from tensorflow.python.ops.gen_nn_ops import Softmax
-from data import DataGenerator
-from utils import img_to_kspace, kspace_to_img, normalize_z
+from artefactcorrection.data import DataGenerator
+from artefactcorrection.utils import img_to_kspace, kspace_to_img, normalize_z
 from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Activation
 from tensorflow.keras.layers import Dropout
 from tensorflow.keras.layers import AveragePooling2D, Input, Flatten, MaxPooling2D
@@ -69,7 +69,7 @@ class k_reg(tensorflow.keras.regularizers.Regularizer):
 class KIKI():
     def __init__(self,
                  img_input=Input(shape=(320, 320, 1)),
-                 idx_input=Input(shape=(4)),
+                 idx_input=Input(shape=(320, 320, 1)),
                  num_filters=64, 
                  lr=0.001,
                  alpha=[0.0, 0.0, 0.0, 0.0],
@@ -107,54 +107,57 @@ class KIKI():
 
 def build_model(inp, indexes, num_artefacts, num_filters, kspace, reg_alpha, loss_case, optimizer_type, lr):
     loss = InterNetLoss(inp, loss_case)
-    if (optimizer_type == "adam"):
+
+    # Optimizer selection
+    if optimizer_type == "adam":
         optimizer = Adam(learning_rate=lr)
-    if (optimizer_type == "rmsprop"):
+    elif optimizer_type == "rmsprop":
         optimizer = RMSprop(learning_rate=lr)
-    if (optimizer_type == "sgd"):
+    elif optimizer_type == "sgd":
         optimizer = SGD(learning_rate=lr)
-    if (optimizer_type == "decay"):
-        lr_schedule = tensorflow.keras.optimizers.schedules.ExponentialDecay(lr, decay_steps=100, decay_rate=0.98, staircase=True)
+    elif optimizer_type == "decay":
+        lr_schedule = tensorflow.keras.optimizers.schedules.ExponentialDecay(
+            lr, decay_steps=100, decay_rate=0.98, staircase=True)
         optimizer = SGD(lr_schedule)
 
-    if (kspace):
-        inp_data = Concatenate()([tf.math.real(inp), tf.zeros_like(inp)])
+    # Wrap real part + zeros with Lambda
+    inp_data = Lambda(lambda x: tf.concat([tf.math.real(x), tf.zeros_like(x)], axis=-1))(inp)
+
+    if kspace:
         inp_kspace = Lambda(img_to_kspace)(inp_data)
-        features = feature_extraction_net(inp_kspace)#, reg=l2(reg_alpha))
+        features = feature_extraction_net(inp_kspace)
         features = inference_net(features, num_filters)
-        out_comp = reconstruction_net(features, num_artefacts, reg=k_reg(reg_alpha))#, reg=k_reg(reg_alpha))
-        for i in range(num_artefacts):
-            out_comp[i] = Lambda(kspace_to_img)(out_comp[i])
+        out_comp = reconstruction_net(features, num_artefacts, reg=k_reg(reg_alpha))
+        out_comp = [Lambda(kspace_to_img)(c) for c in out_comp]
     else:
-        inp_data = Concatenate()([tf.math.real(inp), tf.zeros_like(inp)])
-        features = feature_extraction_net(inp_data)#, reg=l2(reg_alpha))
+        features = feature_extraction_net(inp_data)
         features = inference_net(features, num_filters)
-        out_comp = reconstruction_net(features, num_artefacts, reg=img_reg(reg_alpha))#, reg=img_reg(reg_alpha))
-        
-        
-    out_specific = inp_data[:, :, :, 0:1]
+        out_comp = reconstruction_net(features, num_artefacts, reg=img_reg(reg_alpha))
+
+    # Construct out_specific
+    out_specific = Lambda(lambda x: x[:, :, :, 0:1])(inp_data)
     for i in range(num_artefacts):
-        if ((i == 0)):
-            out_specific = Add()([out_specific, indexes[:, i, None, None, None] * out_comp[i][:, :, :, 0:1]])
-        elif (i != 0):
-            out_specific = Add()([out_specific, indexes[:, i, None, None, None] * out_comp[i][:, :, :, 0:1]])
+        def scale_and_add(inputs, i=i):
+            idxs, comp = inputs
+            return idxs[:, i, None, None, None] * comp[:, :, :, 0:1]
+        weighted = Lambda(scale_and_add)([indexes, out_comp[i]])
+        out_specific = Add()([out_specific, weighted])
 
     out_specific = Lambda(normalize_z)(out_specific)
     model = Model([inp, indexes], out_specific)
     model.compile(loss=[loss], optimizer=optimizer, run_eagerly=False)
 
-    out_full = inp_data[:, :, :, 0:1]
+    # Construct out_full
+    out_full = Lambda(lambda x: x[:, :, :, 0:1])(inp_data)
     for i in range(num_artefacts):
-        if ((i == 0)):
-            out_full = Add()([out_full, out_comp[i][:, :, :, 0:1]])
-        elif (i != 0):
-            out_full = Add()([out_full, out_comp[i][:, :, :, 0:1]])
+        single_comp = Lambda(lambda x: x[:, :, :, 0:1])(out_comp[i])
+        out_full = Add()([out_full, single_comp])
 
     out_full = Lambda(normalize_z)(out_full)
     model_full = Model([inp], out_full)
     model_full.compile(loss=[loss], optimizer=optimizer, run_eagerly=False)
 
-    return (model, model_full)
+    return model, model_full
 
 def feature_extraction_net(inp, num_filters=2, reg=None):
     x_0 = Conv2D(num_filters, kernel_size=3, padding="same", activity_regularizer=reg)(inp[:, :, :, 0:1])
